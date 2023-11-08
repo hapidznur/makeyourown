@@ -82,4 +82,24 @@ describe 'database' do
       "db > .exit",
     ])
   end
+  
+  it 'keeps data after closing connection' do 
+    result1 = run_script([
+      "insert 1 user1 person@example.com",
+      ".exit",
+    ])
+    expect(result1).to match_array([
+      "db > Executed.",
+      'db > .exit'
+    ])
+    result1 = run_script([
+      "select",
+      ".exit",
+    ])
+    expect(result1).to match_array([
+      "db > (1, user1,persion@example.com)",
+      "Executed.",
+      "db > .exit",
+    ])
+  end
 end
