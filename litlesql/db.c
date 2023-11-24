@@ -59,7 +59,7 @@ const uint32_t LEAF_NODE_VALUE_SIZE = ROW_SIZE;
 const uint32_t LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_OFFSET + LEAF_NODE_KEY_SIZE;
 const uint32_t LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE;
 const uint32_t LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE;
-const uint32_t LEAF_NODE_MAX_CELSS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
+const uint32_t LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
 
 typedef enum {
     META_COMMAND_SUCCESS,
@@ -135,8 +135,12 @@ uint32_t* leaf_node_cell(void* node, uint32_t cell_num){
   return node + LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE;
 }
 
-uint32_t* leaf_node_value(void* node, uint32_t cell_num){
+uint32_t* leaf_node_key(void* node, uint32_t cell_num){
   return leaf_node_cell(node,cell_num);
+}
+
+uint32_t* leaf_node_value(void* node, uint32_t cell_num){
+  return leaf_node_cell(node,cell_num) + LEAF_NODE_KEY_SIZE;
 }
 
 void initialize_leaf_node(void* node) {*leaf_node_num_cells(node) =0;}
@@ -148,7 +152,7 @@ void pager_flush(Pager* pager, uint32_t page_num) {
   }
 
   off_t offset = lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
-  ssize_t bytes_writter = write(pager->file_descriptor, pager->pages[page_num], size);
+  ssize_t bytes_writter = write(pager->file_descriptor, pager->pages[page_num],PAGE_SIZE);
 
   ssize_t bytes_written = 
       write(pager->file_descriptor, pager->pages[page_num], PAGE_SIZE);
@@ -219,7 +223,6 @@ Cursor* table_end(Table* table){
   return cursor;
 }
 
-
 void* cursor_value(Cursor* cursor){
   uint32_t page_num = cursor->page_num;
   void* page = get_page(cursor->table->pager, page_num);
@@ -235,6 +238,26 @@ void cursor_advance(Cursor* cursor){
   }
 }
 // End Cursor
+
+void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value){
+  void* node = get_page(cursor->table->pager,cursor->page_num);
+  uint32_t num_cells = *leaf_node_num_cells(node);
+  if (num_cells >= LEAF_NODE_MAX_CELLS){
+    // Node full
+    printf("Need to implement splitting a leaf node");
+    exit(EXIT_FAILURE);
+  }
+
+  if (cursor->cell_num<num_cells){
+    // Make room for new cell
+    for (uint32_t i = num_cells;i>cursor->cell_num;i--) {
+      memcpy(leaf_node_cell(node,i),  leaf_node_cell(node, i-1), LEAF_NODE_CELL_SIZE);
+    }
+    *(leaf_node_num_cells(node)) +=1;
+    *(leaf_node_key(node, cursor->cell_num)) = key;
+    serialize_row(value, leaf_node_value(node, cursor->cell_num));
+  }
+}
 Pager* pager_open(const char* filename){
 
   int fd = open(filename, 
@@ -266,11 +289,14 @@ Pager* pager_open(const char* filename){
 
 Table* db_open(const char* filename){
     Pager* pager = pager_open(filename);
-    uint32_t num_rows = pager->file_length / ROW_SIZE;
     Table* table = (Table*)malloc(sizeof(Table));
     table->pager=pager;
-    table->num_rows = num_rows;
-    return table;
+    table->root_page_num= 0;
+  if (pager->num_pages == 0) {
+    void* root_node = get_page(pager,0);
+    initialize_leaf_node(root_node);
+  }
+  return table;
 }
 
 void db_close(Table* table) {
