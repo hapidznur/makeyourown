@@ -5,4 +5,4 @@ run: db
 clean: 
 		rm -rf db *db
 test: db
-		bundle exec rspec
+		gcc db.c -o db && bundle exec rspec
