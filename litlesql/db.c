@@ -35,7 +35,10 @@ typedef struct{
     ssize_t input_length;
 } InputBuffer;
 
-typedef enum {NODE_INTERNAL, NODE_LEAF} NodeType;
+typedef enum {
+  NODE_INTERNAL, 
+  NODE_LEAF
+} NodeType;
 
 /*
 *  Common Node Header Layout
@@ -126,8 +129,20 @@ void deserialize_row(void* source, Row* destination){
     memcpy(&(destination->username), source + USERNAME_OFFSET,USERNAME_SIZE);
     memcpy(&(destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
+//
+// NodeType
+NodeType get_node_type(void* node){
+  uint8_t value = *((uint8_t*)(node+NODE_TYPE_OFFSET));
+  return (NodeType)value;
+}
 
-// NoodeType
+void set_node_type(void* node, NodeType type){
+  uint8_t value = type;
+  *((uint8_t*)(node + NODE_TYPE_OFFSET)) = value;
+}
+// end
+
+// leaf_node 
 uint32_t* leaf_node_num_cells(void* node){
   return node + LEAF_NODE_NUM_CELLS_OFFSET;
 }
@@ -143,20 +158,11 @@ uint32_t* leaf_node_key(void* node, uint32_t cell_num){
 uint32_t* leaf_node_value(void* node, uint32_t cell_num){
   return leaf_node_cell(node,cell_num) + LEAF_NODE_KEY_SIZE;
 }
-NodeType get_node_type(void* node){
-  uint8_t value = *((uint8_t*)(node+NODE_TYPE_OFFSET));
-  return (NodeType)value;
-}
-
-void set_node_type(void* node, NodeType type){
-  uint8_t value = type;
-  *((uint8_t*)(node + NODE_TYPE_OFFSET)) = value;
-}
-// end
 
 void initialize_leaf_node(void* node) {
   set_node_type(node, NODE_LEAF);
-  *leaf_node_num_cells(node) =0;}
+  *leaf_node_num_cells(node) = 0;
+}
 
 void pager_flush(Pager* pager, uint32_t page_num) {
   if (pager->pages[page_num] == NULL) {
@@ -165,12 +171,10 @@ void pager_flush(Pager* pager, uint32_t page_num) {
   }
 
   off_t offset = lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
-  ssize_t bytes_writter = write(pager->file_descriptor, pager->pages[page_num],PAGE_SIZE);
-
   ssize_t bytes_written = 
       write(pager->file_descriptor, pager->pages[page_num], PAGE_SIZE);
 
-  if (bytes_writter == -1) {
+  if (bytes_written == -1) {
     printf("Error writing: %d\n", errno);
     exit(EXIT_FAILURE);
   }
@@ -302,7 +306,7 @@ void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value){
   }
   *(leaf_node_num_cells(node)) +=1;
   *(leaf_node_key(node, cursor->cell_num)) = key;
-  printf("%d", cursor->cell_num);
+
   serialize_row(value, leaf_node_value(node, cursor->cell_num));
 }
 
@@ -336,11 +340,12 @@ Pager* pager_open(const char* filename){
 
 
 Table* db_open(const char* filename){
-    Pager* pager = pager_open(filename);
-    Table* table = malloc(sizeof(Table));
-    table->pager=pager;
-    table->root_page_num= 0;
+  Pager* pager = pager_open(filename);
+  Table* table = malloc(sizeof(Table));
+  table->pager=pager;
+  table->root_page_num= 0;
   if (pager->num_pages == 0) {
+    // New database initalise. Page 0 as leaf node
     void* root_node = get_page(pager,0);
     initialize_leaf_node(root_node);
   }
@@ -483,11 +488,14 @@ ExecuteResult execute_insert(Statement* statement, Table* table){
   Cursor* cursor = table_find(table, key_to_insert);
   if (cursor->cell_num < num_cells) {
     uint32_t key_at_index = *leaf_node_key(node, cursor->cell_num);
+    printf("key at index %d\n", key_at_index);
     if (key_at_index == key_to_insert){
       return EXECUTE_DUPLICATE_KEY;
     }
   }
+  printf("%d", cursor->cell_num);
   leaf_node_insert(cursor,row_to_insert->id, row_to_insert);
+  free(cursor);
   return EXECUTE_SUCCESS;
 }
 
@@ -501,7 +509,6 @@ ExecuteResult execute_select(Statement* statement, Table* table){
     cursor_advance(cursor);
   }
   free(cursor);
-
   return EXECUTE_SUCCESS;
 }
 
@@ -554,10 +561,10 @@ int main(int argc, char* argv[]){
           printf("ID must be positive.\n");
           continue;
       case (PREPARE_SYNTAX_ERROR):
-          printf("Syntax error");
+          printf("Syntax error.\n");
           continue;
       case (PREPARE_UNRECOGNIZED_STATEMENT):
-          printf("Unrecognized keyword '%s' .\n", input_buffer->buffer);
+          printf("Unrecognized keyword '%s'.\n", input_buffer->buffer);
           continue;
       }
 
