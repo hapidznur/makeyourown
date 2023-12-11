@@ -124,9 +124,9 @@ describe 'database' do
       "db > Constants:",
       "ROW_SIZE: 293",
       "COMMON_NODE_HEADER_SIZE: 6",
-      "LEAF_NODE_HEADER_SIZE: 10",
+      "LEAF_NODE_HEADER_SIZE: 14",
       "LEAF_NODE_CELL_SIZE: 297",
-      "LEAF_NODE_SPACE_FOR_CELLS: 4086",
+      "LEAF_NODE_SPACE_FOR_CELLS: 4082",
       "LEAF_NODE_MAX_CELLS: 13",
       "db > ",
     ])
@@ -171,10 +171,10 @@ describe 'database' do
   end
   it '' do
     script = (1..14).map do |i|
-      "insert #{i} user#{i} person#{i}@m.com"
+      "insert #{i} user#{i} person#{i}@example.com"
     end
     script << ".btree"
-    script << "insert 15 user15 person15@m.com"
+    script << "insert 15 user15 person15@example.com"
     script << ".exit"
     result = run_script(script)
   expect(result[14...(result.length)]).to match_array([
@@ -199,6 +199,34 @@ describe 'database' do
       "    - 13",
       "    - 14",
       "db > Executed.",
+      "db > ",
+    ])
+  end
+  it 'print all row in a multi-level tree' do
+    script = []
+    (1..15).each do |i|
+      script << "insert #{i} user#{i} person#{i}@m.com"
+    end
+    script << "select"
+    script << ".exit"
+    result = run_script(script)
+    expect(result[15...(result.length)]).to match_array([
+      "db > (1, user1, person1@m.com)",
+      "(2, user2, person2@m.com)",
+      "(3, user3, person3@m.com)",
+      "(4, user4, person4@m.com)",
+      "(5, user5, person5@m.com)",
+      "(6, user6, person6@m.com)",
+      "(7, user7, person7@m.com)",
+      "(8, user8, person8@m.com)",
+      "(9, user9, person9@m.com)",
+      "(10, user10, person10@m.com)",
+      "(11, user11, person11@m.com)",
+      "(12, user12, person12@m.com)",
+      "(13, user13, person13@m.com)",
+      "(14, user14, person14@m.com)",
+      "(15, user15, person15@m.com)",
+      "Executed.",
       "db > ",
     ])
   end
