@@ -616,7 +616,7 @@ void print_tree(Pager* pager, uint32_t page_num, uint32_t indentation_level){
     case(NODE_INTERNAL):
     num_keys = *internal_node_num_keys(node);
     indent(indentation_level);
-    printf("- internal (size %d\n)", num_keys);
+    printf("- internal (size %d)\n", num_keys);
     for (uint32_t i =0;i < num_keys;i++){
         child = *internal_node_child(node, i);
         print_tree(pager, child, indentation_level + 1);

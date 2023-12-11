@@ -9,7 +9,7 @@ describe 'database' do
       commands.each do |command|
         begin
           pipe.puts command
-        rescue Errno:EPIPE
+        rescue Errno::EPIPE
            break
         end
       end
