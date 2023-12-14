@@ -316,7 +316,18 @@ uint32_t* internal_node_key(void* node, uint32_t key_num){
   return (void*)internal_node_cell(node, key_num) + INTERNAL_NODE_CHILD_SIZE;
 }
 
-uint32_t get_node_max_key(void* node) {
+
+uint32_t get_node_max_key(Pager* pager, void* node) {
+  if(get_node_type(node) == NODE_LEAF) {
+    return *leaf_node_key(node, *leaf_node_num_cells(node) - 1);
+  }
+
+  void* right_child = get_page(pager, *internal_node_right_child(node));
+  return get_node_max_key(pager, right_child);
+}
+
+
+/*uint32_t get_node_max_key(void* node) {
   switch (get_node_type(node)) {
     case NODE_INTERNAL:
       return *internal_node_key(node, 
@@ -325,6 +336,7 @@ uint32_t get_node_max_key(void* node) {
       return *leaf_node_key(node, *leaf_node_num_cells(node)-1);
   }
 }
+*/
 
 // Cursor
 
@@ -477,9 +489,25 @@ void create_new_root(Table* table, uint32_t right_child_page_num){
   uint32_t left_child_page_num = get_unused_page_num(table->pager);
 
   void* left_child = get_page(table->pager, left_child_page_num);
+  if (get_node_type(root) == NODE_INTERNAL) {
+    initialize_internal_node(right_child);
+    initialize_internal_node(left_child);
+  }
+
   /* Left child has data copied from old root */
   memcpy(left_child, root, PAGE_SIZE);
   set_node_root(left_child, false);
+
+
+  if (get_node_type(left_child) == NODE_INTERNAL) {
+    void* child;
+    for(int i=0; i < *internal_node_num_keys(left_child); i++){
+      child = get_page(table->pager, *internal_node_child(left_child, i));
+      *node_parent(child) = left_child_page_num;
+    }
+    child = get_page(table->pager, internal_node_right_child(left_child));
+  }
+  *node_parent(child) = left_child_page_num;
 
   /*Root node is a new internal node with one key and two key children */
 
@@ -487,7 +515,7 @@ void create_new_root(Table* table, uint32_t right_child_page_num){
   set_node_root(root, true);
   *internal_node_num_keys(root) = 1;
   *internal_node_child(root, 0) = left_child_page_num;
-  uint32_t left_child_max_key = get_node_max_key(left_child);
+  uint32_t left_child_max_key = get_node_max_key(table->pager, left_child);
   *internal_node_key(root, 0) = left_child_max_key;
   *internal_node_right_child(root) = right_child_page_num;
   *node_parent(left_child) = table->root_page_num;
@@ -520,8 +548,8 @@ void internal_node_split_insert(Table* table, uint32_t parent_page_num, uint32_t
   if (splitting_root) {
     create_new_root(table, new_page_num);
     parent = get_page(table->pager, table->root_page_num);
-   old_page_num = *internal_node_child(parent,0);
-  old_node = get_page(table->pager, old_page_num); 
+    old_page_num = *internal_node_child(parent,0);
+    old_node = get_page(table->pager, old_page_num); 
   } else {
     parent = get_page(table->pager, *node_parent(old_node));
     new_node = get_page(table->pager, new_page_num);
@@ -534,14 +562,14 @@ void internal_node_split_insert(Table* table, uint32_t parent_page_num, uint32_t
   void* cur = get_page(table->pager, cur_page_num);
 
   /*
-   Frist
+   * First
     */
   internal_node_insert(table, new_page_num, cur_page_num);
   *node_parent(cur) = new_page_num;
   *internal_node_right_child(old_node) = INVALID_PAGE_NUM;
   
   /*
-   * For each 
+   * For each key until you get to the middle key 
    */
   for (int i = INTERNAL_NODE_MAX_CELLS - 1; i > INTERNAL_NODE_MAX_CELLS / 2;i--){
     cur_page_num = *internal_node_child(old_node, i);
@@ -559,7 +587,21 @@ void internal_node_split_insert(Table* table, uint32_t parent_page_num, uint32_t
   *internal_node_right_child(old_node) = *internal_node_child(old_node, *old_num_keys - 1);
   (*old_num_keys)--;
 
+  /*
+   * Determine which of the two nodes after the split should containe the key and insert the child
+   */
+  uint32_t max_after_split = get_node_max_key(table->pager, old_node);
+  uint32_t destination_page_num = child_max < max_after_split ? old_page_num : new_page_num;
+  
+  internal_node_insert(table, destination_page_num, child_page_num);
+  *node_parent(child) = destination_page_num;
 
+  update_internal_node_key(parent, old_max, get_node_max_key(table->pager, old_node));
+
+  if (!splitting_root) {
+    internal_node_insert(table, *node_parent(old_node), new_page_num);
+    *node_parent(new_node) = *node_parent(old_node);
+  }
 }
 
 void internal_node_insert(Table* table,
